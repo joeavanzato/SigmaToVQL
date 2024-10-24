@@ -37,6 +37,7 @@ class ArtifactVQL:
     description: str
     type: str
     sources: list
+    export: str
 
 
 def parse_arguments():
@@ -63,7 +64,7 @@ def parse_arguments():
     return args, unknown
 
 
-def get_validated_maps(data: list, params) -> list:
+def get_validated_maps(data: list, params: dict) -> list:
     """
     Iterates through all input ArtifactMap to ensure they contain the necessary fields and replace as necessary
     :param params: Script input parameters for replacement to Artifacts
@@ -71,6 +72,7 @@ def get_validated_maps(data: list, params) -> list:
     :return: list of validated ArtifactMaps
     """
     required_fields = ["artifact_name", "artifact_subsource", "sigma_logmap", "field_map"]
+    # logsources = []
     validated_maps = []
     for i in data:
         map_valid = True
@@ -81,15 +83,24 @@ def get_validated_maps(data: list, params) -> list:
         if not map_valid:
             continue
         required_map_fields = ["category", "product", "service"]
-        for category in required_map_fields:
-            if category not in i["sigma_logmap"]:
-                logging.error(f"{i['artifact_name']} missing required sigma_logmap key: {category}")
-                map_valid = False
+        for field in required_map_fields:
+            if field not in i["sigma_logmap"]:
+                logging.error(f"{i['artifact_name']} missing required sigma_logmap key: {field}, defaulting to *")
+                i["sigma_logmap"][field] = "*"
+                #map_valid = False
         if map_valid:
             tmp = ArtifactMap(artifact=i["artifact_name"], source=i["artifact_subsource"],
                               category=i["sigma_logmap"]["category"], product=i["sigma_logmap"]["product"],
                               service=i["sigma_logmap"]["service"], fields=i["field_map"], sigmamap=f'{i["sigma_logmap"]["category"]}/{i["sigma_logmap"]["product"]}/{i["sigma_logmap"]["service"]}',
                               sourcename=f"{i['artifact_name']} - {i['artifact_subsource']}", parameters={})
+
+            # # TODO - Fix this to support wild-card appropriately
+            # tmpsource = f"{tmp.category} - {tmp.product} - {tmp.service}"
+            # if tmpsource in logsources:
+            #     logging.error(f"{i['artifact_name']} has duplicate log source!")
+            #     logsources.append(tmpsource)
+            # else:
+            #     logsources.append(tmpsource)
             if "parameters" in i:
                 for k in i["parameters"].keys():
                     if k in params:
@@ -103,6 +114,7 @@ def get_validated_maps(data: list, params) -> list:
                     for k, v in params[tmp.artifact].items():
                         tmp.parameters[k] = v
             validated_maps.append(tmp)
+    logging.info(f"Loaded {len(validated_maps)} Validated Artifact Maps")
     return validated_maps
 
 
@@ -113,47 +125,121 @@ def build_mapping_vql(valid_maps: list) -> dict:
     :param valid_maps:
     :return:
     """
-    mappings = {}
+    #  In order to allow multiple artifacts to be defined on the same log-source, we will chain them together like below
+    #         SELECT * FROM chain(
+    #           a={SELECT * FROM Artifact.Windows.System.Powershell.PSReadline()},
+    #           b={SELECT * FROM Artifact.Windows.System.Powershell.ModuleAnalysisCache()},
+    #           async=TRUE)
+    #         }
+    # This means we should first iterate through all maps to find related logsource/map combos since we don't know ahead of time
+    combos = {}
     for m in valid_maps:
-        tmp = {}
-        if m.source is not None:
-            tmp["name"] = m.sourcename
+
+        if m.sigmamap in combos:
+            combos[m.sigmamap].append(m)
         else:
-            tmp["name"] = m.artifact
+            combos[m.sigmamap] = [m]
+
+    # Now we can iterate through the combinations and then again within to build full artifact chains per source
+
+    mappings = {}
+    for c in combos.keys():
+        fields = {}
+        tmp = {}
+        tmp["name"] = c
         tmp["query"] = f"""LET LogSources <= sigma_log_sources(
-    `{m.sigmamap}` = {{
-    SELECT * FROM Artifact.{m.artifact}("""
-
-        if m.source is not None:
-            tmp["query"] += f"source=\"{m.source}\""
-        if len(m.parameters) != 0:
+        `{c}` = {{
+        SELECT * FROM chain(
+        """
+        qidx = 0
+        for m in combos[c]:
+            if m.fields is not None:
+                for k in m.fields.keys():
+                    if k in fields:
+                        logging.error(f"Field Map Collision - Field '{k}' on Log Source {c}")
+                    fields[k] = m.fields[k]
+            tmp["query"] += f"""query_{qidx}={{SELECT * FROM Artifact.{m.artifact}("""
             if m.source is not None:
-                tmp["query"] += f","
-            length = len(m.parameters)
-            idx = 1
-            for k in m.parameters.keys():
-                #  TODO - Review and Test
-                if type(m.parameters[k] is str):
-                    tmp["query"] += f"{k}=\"{m.parameters[k]}\""
-                elif type(m.parameters[k] is bool):
-                    tmp["query"] += f"{k}={m.parameters[k]}"
-                else:
-                    # TODO - will this work for ints?
-                    tmp["query"] += f"{k}=\"{m.parameters[k]}\""
-                if idx != length:
-                    tmp["query"] += ","
-                idx += 1
-        tmp["query"] += """)
-    }
-)\n"""
-
-        if m.fields is None:
-            m.fields = {}
-        tmp["query"] += "LET FieldMapping <= dict(\n"
-        for field in m.fields.keys():
-            tmp["query"] += f"  {field}=\"x=>x.{m.fields[field]}\"\n"
+                tmp["query"] += f"source=\"{m.source}\""
+            qidx += 1
+            if len(m.parameters) != 0:
+                if m.source is not None:
+                    tmp["query"] += f","
+                length = len(m.parameters)
+                idx = 1
+                for k in m.parameters.keys():
+                    if type(m.parameters[k] is str):
+                        tmp["query"] += f"{k}=\"{m.parameters[k]}\""
+                    elif type(m.parameters[k] is bool):
+                        tmp["query"] += f"{k}={m.parameters[k]}"
+                    else:
+                        # TODO - will this work for ints?
+                        tmp["query"] += f"{k}=\"{m.parameters[k]}\""
+                    if idx != length:
+                        tmp["query"] += ","
+                    idx += 1
+            tmp["query"] += """)},
+        """
+        tmp["query"] += """async=TRUE)
+        }
+    )
+        """
+        tmp["query"] += """
+LET FieldMapping <= dict(\n"""
+        field_count = len(fields)
+        field_idx = 1
+        for field in fields.keys():
+            tmp["query"] += f"  {field}=\"x=>x.{fields[field]}\""
+            if field_idx != field_count:
+                tmp["query"] += ",\n"
+            else:
+                tmp["query"] += "\n"
+            field_idx += 1
         tmp["query"] += ")\n"
-        mappings[m.sigmamap] = tmp
+        #print(tmp["query"])
+        mappings[c] = tmp
+
+#     for m in valid_maps:
+#         continue
+#         tmp = {}
+#         if m.source is not None:
+#             tmp["name"] = m.sourcename
+#         else:
+#             tmp["name"] = m.artifact
+#         tmp["query"] = f"""LET LogSources <= sigma_log_sources(
+#     `{m.sigmamap}` = {{
+#     SELECT * FROM Artifact.{m.artifact}("""
+#
+#         if m.source is not None:
+#             tmp["query"] += f"source=\"{m.source}\""
+#         if len(m.parameters) != 0:
+#             if m.source is not None:
+#                 tmp["query"] += f","
+#             length = len(m.parameters)
+#             idx = 1
+#             for k in m.parameters.keys():
+#                 #  TODO - Review and Test
+#                 if type(m.parameters[k] is str):
+#                     tmp["query"] += f"{k}=\"{m.parameters[k]}\""
+#                 elif type(m.parameters[k] is bool):
+#                     tmp["query"] += f"{k}={m.parameters[k]}"
+#                 else:
+#                     # TODO - will this work for ints?
+#                     tmp["query"] += f"{k}=\"{m.parameters[k]}\""
+#                 if idx != length:
+#                     tmp["query"] += ","
+#                 idx += 1
+#         tmp["query"] += """)
+#     }
+# )\n"""
+#
+#         if m.fields is None:
+#             m.fields = {}
+#         tmp["query"] += "LET FieldMapping <= dict(\n"
+#         for field in m.fields.keys():
+#             tmp["query"] += f"  {field}=\"x=>x.{m.fields[field]}\"\n"
+#         tmp["query"] += ")\n"
+#         mappings[m.sigmamap] = tmp
     return mappings
 
 
@@ -202,7 +288,14 @@ def replace_variables(rule: dict, variables: dict) -> dict:
     """
     # Currently variables are represented as '$var_NAME$
     var_pattern = re.compile("^%.*%$")
-    logsource = f"{rule['logsource']['category']}\\{rule['logsource']['product']}\\{rule['logsource']['service']}"
+    category, product, service = "*", "*", "*"
+    if "category" in rule["logsource"]:
+        category = rule["logsource"]["category"]
+    if "product" in rule["logsource"]:
+        product = rule["logsource"]["product"]
+    if "service" in rule["logsource"]:
+        service = rule["logsource"]["service"]
+    logsource = f"{category}\\{product}\\{service}"
     for k in rule["detection"].keys():
         if k in "condition":
             continue
@@ -274,7 +367,7 @@ def build_rule_maps(rules: list, variables: dict) -> dict:
             product = rule["logsource"]["product"]
         if "service" in rule["logsource"]:
             service = rule["logsource"]["service"]
-        tmp_name = f"{category}_{product}_{service}"
+        tmp_name = f"{category}|{product}|{service}"
         if tmp_name in rule_lists:
             rule_lists[tmp_name].append(rule)
         else:
@@ -289,7 +382,7 @@ def str_presenter(dumper, data):
     return dumper.represent_scalar('tag:yaml.org,2002:str', data)
 
 
-def build_input_parameters(unknown_arguments, arguments_file) -> dict:
+def build_input_parameters(unknown_arguments: list, arguments_file: str) -> dict:
     """
     Builds a dictionary containing parameters for Artifact invocations
     :param unknown_arguments: list of arbitrary arguments passed in via the command-line
@@ -334,11 +427,10 @@ def get_artifact_maps(maps_directory: str) -> list:
     :param maps_directory: string representing the fully-qualified directory containing artifact maps
     :return: returns a list of dicts, each of which represents a raw artifact map
     """
-    # TODO - Check for logsource collisions - each map should have a unique combination
     map_file_list = []
     for root, dirs, files in os.walk(maps_directory):
         for file in files:
-            if file.endswith(".yaml"):
+            if file.startswith("map_") and file.endswith(".yaml"):
                 logging.info(f"Found Map File: {file}")
                 map_file_list.append(os.path.join(root, file))
     maps = []
@@ -347,6 +439,8 @@ def get_artifact_maps(maps_directory: str) -> list:
             try:
                 count = 0
                 data = yaml.safe_load(f)
+                if data is None:
+                    continue
                 for m in data:
                     count += 1
                     maps.append(m)
@@ -371,10 +465,13 @@ def main():
     else:
         logging.info(f"Loaded {len(artifact_maps)} Artifact Maps")
 
+    merged_rules_file = os.path.abspath(os.path.join(args.output, "merged_rules.yaml"))
+    tmp_merged_file = merged_rules_file.replace('\\', '/')
     artifact_output = ArtifactVQL(name="Custom.SigmaToVQL.Merged",
                                   author="Autogenerated by github.com/joeavanzato/SigmaToVQL",
                                   description="Defines Sigma Log Sources/Field Mappings and executes relevant queries on a Velociraptor Client",
                                   type="CLIENT",
+                                  export=f"LET Rules = read_file(filename=\"{tmp_merged_file}\", length=10000000)",
                                   sources=[])
 
     logging.info(f"Validating Artifact Maps...")
@@ -396,21 +493,29 @@ def main():
     # Merge all Sigma rules associated with a common logmap
     logging.info(f"Merging Sigma Rules...")
     file_key_map = {}
+    rules = []
     for k in rule_lists.keys():
+        for rule in rule_lists[k]:
+            rules.append(rule)
         file_name = f"{k}.yaml"
+        file_name = file_name.replace("*", "").replace("|", "_")
         file_path = os.path.join(merged_rules_dir, file_name)
         with open(file_path, "w") as f:
             yaml.dump_all(rule_lists[k], f, default_flow_style=False)
-        file_key_map[k.replace("_", "/")] = os.path.abspath(file_path).replace("\\", "\\\\")
+        file_key_map[k] = os.path.abspath(file_path).replace("\\", "\\\\")
+
+    # dump merged output
+    with open(merged_rules_file, "w") as f:
+        yaml.dump_all(rules, f, default_flow_style=False)
 
     # Prepare the individual source queries on a per-logmap basis
     for key in rule_lists.keys():
-        tmp_lookup_key = key.replace("_", "/")
+        tmp_lookup_key = key.replace("|", "/")
         if tmp_lookup_key not in vql_maps:
             logging.error(f"No Artifact Map for Defined logsource: {tmp_lookup_key}")
             continue
-        vql_maps[tmp_lookup_key]["query"] += f"LET RulePath = \"{file_key_map[tmp_lookup_key]}\"\n"
-        vql_maps[tmp_lookup_key]["query"] += f"LET Rules = read_file(filename=RulePath, length=10000000)\n"
+        #vql_maps[tmp_lookup_key]["query"] += f"LET RulePath = \"{file_key_map[tmp_lookup_key]}\"\n"
+        #vql_maps[tmp_lookup_key]["query"] += f"LET Rules = read_file(filename=RulePath, length=10000000)\n"
         vql_maps[tmp_lookup_key]["query"] += 'SELECT * FROM sigma(rules=split(string=Rules, sep_string="---"),log_sources=LogSources,debug=False,field_mapping=FieldMapping)'
 
     # Finalize the VQL 'sources' per logmap
@@ -421,7 +526,7 @@ def main():
         }
         # tmp["query"] = LiteralScalarString(vql_maps[k]["query"])
         # We only add sources that have 1 or more rules to not clutter the main VQL
-        if k.replace("/", "_") in rule_lists:
+        if k.replace("/", "|") in rule_lists:
             artifact_output.sources.append(tmp)
 
     # Generate the final output artifact
@@ -433,7 +538,8 @@ def main():
                "author": artifact_output.author,
                "description": artifact_output.description,
                "type": artifact_output.type,
-               "sources": artifact_output.sources
+               "sources": artifact_output.sources,
+               "export": artifact_output.export
                }
         yaml.dump(tmp, f, default_flow_style=False)
     logging.info(f"Artifact Created: {artifact_output_path}")
