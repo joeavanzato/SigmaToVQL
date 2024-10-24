@@ -1,0 +1,15 @@
+# Variables are applied to sigma rules
+# Sigma Rules do not specify an artifact - inside, they specify a logsource
+# Variables can be either global or logsource specific
+# Logsource-Specific variables overwrite global variables
+global:
+  suspicious_binary_names:
+    - whoami
+    - ping
+  suspicious_extensions: ["exe","bat"]
+local:
+  category\product\service:
+    suspicious_extensions: ["dll"]
+  filesystem\windows\mft:
+    suspicious_extensions: ["dll"]
+
