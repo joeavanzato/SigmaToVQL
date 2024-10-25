@@ -1,0 +1,20 @@
+- artifact_name: Windows.Sys.Drivers
+  artifact_subsource: RunningDrivers
+  sigma_logmap:
+    category: driver_load
+    product: windows
+  field_map:
+    ImageLoaded: PathName
+- artifact_name: Windows.Sys.Programs
+  artifact_subsource:
+  sigma_logmap:
+    category: software
+    product: windows
+  field_map:
+- artifact_name: Windows.Sys.StartupItems
+  artifact_subsource:
+  sigma_logmap:
+    category: startup
+    product: windows
+  field_map:
+

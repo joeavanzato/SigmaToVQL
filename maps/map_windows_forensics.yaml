@@ -1,0 +1,57 @@
+- artifact_name: Windows.Forensics.Bam
+  artifact_subsource:
+  sigma_logmap:
+    category: process_creation
+    product: windows
+    service: bam
+  field_map:
+    FileName: Binary
+    User: UserName
+- artifact_name: Windows.Forensics.Prefetch
+  artifact_subsource:
+  sigma_logmap:
+    category: process_creation
+    product: windows
+    service: prefetch
+  field_map:
+- artifact_name: Windows.Forensics.CertUtil
+  artifact_subsource:
+  sigma_logmap:
+    category: proxy
+    product: windows
+    service: certutil
+  field_map:
+    c-uri: URL
+    cs-uri: URL
+    cs-host: URL  # UrlTLD exists but is not populated\
+- artifact_name: Windows.Forensics.Lnk
+  artifact_subsource:
+  sigma_logmap:
+    category: file_access
+    product: windows
+    service: lnk
+- artifact_name: Windows.Forensics.RecentApps
+  artifact_subsource:
+  sigma_logmap:
+    category: process_creation
+    product: windows
+    service: recentapps
+  field_map:
+- artifact_name: Windows.Forensics.Timeline
+  artifact_subsource:
+  sigma_logmap:
+    category: process_creation
+    product: windows
+    service: timeline
+  field_map:
+    Image: Application
+    Name: Application
+- artifact_name: Windows.Forensics.Usn
+  artifact_subsource:
+  sigma_logmap:
+    category: file_event
+    product: windows
+    service: usn
+  field_map:
+    Image: OSPath
+    Name: Filename

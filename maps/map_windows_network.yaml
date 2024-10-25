@@ -1,0 +1,12 @@
+- artifact_name: Windows.Network.NetstatEnriched
+  artifact_subsource:
+  sigma_logmap:
+    product: windows
+    category: network_connection
+  field_map:
+    User: Username
+    Image: Path
+    CommandLine: CommandLine
+    SourcePort: SrcPort
+    DestinationPort: DestPort
+    DestinationIp: DestIP

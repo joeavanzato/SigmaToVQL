@@ -3,13 +3,7 @@
 # Variables can be either global or logsource specific
 # Logsource-Specific variables overwrite global variables
 global:
-  suspicious_binary_names:
-    - whoami
-    - ping
-  suspicious_extensions: ["exe","bat"]
+  suspicious_extensions: [.exe, .bat, .ps1, .hta, .vb, .vba, .vbs, .rar, .zip, .gz, .7z, .dll, .scr, .cmd, .com, .ws, .wsf, .scf, .scr, .pif, .dmp,.htm]
 local:
-  category\product\service:
-    suspicious_extensions: ["dll"]
-  filesystem\windows\mft:
-    suspicious_extensions: ["dll"]
-
+  system\windows\psreadline:
+    suspicious_terms: [mimikatz]

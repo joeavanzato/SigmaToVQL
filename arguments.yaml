@@ -1,10 +1,12 @@
 # Insert replacement values for place-holder parameters when defining artifact sources
-# If global, Parameter name must be specified within the artifact_map.yaml definitions
-# If a parameter is specified under a defined artifact, it will only affect that artifact
-# If a parameter is specified under a defined artifact it will be forcefully added, even if not mapped
+# If under global, Parameter name must be specified within the artifact_map.yaml definitions to be passed
+# If a parameter is specified locally under a defined artifact, it will only affect that artifact and will be forcefully added/replaced, even without a map
 global:
   DateAfter: 2024-10-01T00:00:00Z
+  DateBefore: 2024-11-01T00:00.00Z
 local:
   Windows.NTFS.MFT:
-    DateBefore: 2024-10-07T00:00:00Z
     AllNtfs: True
+  Windows.Forensics.Lnk:
+    CheckHostnameMismatch: True
+    SuspiciousOnly: True

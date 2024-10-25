@@ -1,0 +1,93 @@
+- artifact_name: Windows.System.Amcache
+  artifact_subsource: InventoryApplicationFile
+  sigma_logmap:
+    category: file_access
+    product: windows
+    service: amcache
+  field_map:
+    Image: Binary
+    TargetFilename: Name
+- artifact_name: Windows.System.DLLs
+  artifact_subsource:
+  sigma_logmap:
+    category: image_load
+    product: windows
+    service: dlls
+  field_map:
+    ImageLoaded: ModulePath
+    Image: _Exe
+- artifact_name: Windows.System.DNSCache
+  artifact_subsource:
+  sigma_logmap:
+    category: dns_query
+    product: windows
+    service: dnscache
+  field_map:
+    QueryName: Name
+    DestinationHostname: Name
+#- artifact_name: Windows.System.Handles
+#  artifact_subsource:
+#  sigma_logmap:
+#    product: windows
+#    category: image_load
+#  field_map:
+- artifact_name: Windows.System.HostsFile
+  artifact_subsource:
+  sigma_logmap:
+    category: network_connection
+    product: windows
+    service: hostsfile
+  field_map:
+    Resolution: Resolution
+    Hostname: Hostname
+    DestinationHostname: Hostname
+    Comment: Comment
+- artifact_name: Windows.System.Powershell.ModuleAnalysisCache
+  artifact_subsource:
+  sigma_logmap:
+    category: ps_module
+    product: windows
+    service: moduleanalysiscache
+  field_map:
+    Payload: Functions
+    ContextInfo: Functions
+- artifact_name: Windows.System.Powershell.PSReadline
+  artifact_subsource:
+  sigma_logmap:
+    category: ps_script
+    product: windows
+    service: psreadline
+  field_map:
+    ScriptBlockText: Line
+- artifact_name: Windows.System.Pslist
+  artifact_subsource:
+  sigma_logmap:
+    category: process_creation
+    product: windows
+    service: pslist
+  field_map:
+    SubjectUserName: Username
+    TargetUserName: Username
+    User: Username
+    CommandLine: CommandLine
+    Image: Exe
+    NewProcessName: Name
+    OriginalFileName: Name
+- artifact_name: Windows.System.RootCAStore
+  artifact_subsource:
+  sigma_logmap:
+    product: windows
+    service: rootcastore
+  field_map:
+- artifact_name: Windows.System.Services
+  artifact_subsource:
+  sigma_logmap:
+    product: windows
+    service: services
+  field_map:
+- artifact_name: Windows.System.TaskScheduler
+  artifact_subsource:
+  sigma_logmap:
+    product: windows
+    service: taskscheduler
+  field_map:

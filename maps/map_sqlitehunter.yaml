@@ -1,0 +1,8 @@
+- artifact_name: Generic.Forensic.SQLiteHunter
+  artifact_subsource: Chromium Browser Extensions
+  sigma_logmap:
+    category: sqlitehunter
+    product: chromium
+    service: extensions
+  field_map:
+    Permissions: Permissions

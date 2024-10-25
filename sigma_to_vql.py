@@ -196,6 +196,7 @@ LET FieldMapping <= dict(\n"""
                 tmp["query"] += "\n"
             field_idx += 1
         tmp["query"] += ")\n"
+        tmp["query"] += 'SELECT * FROM sigma(rules=split(string=Rules, sep_string="---"),log_sources=LogSources,debug=False,field_mapping=FieldMapping)'
         #print(tmp["query"])
         mappings[c] = tmp
 
@@ -509,14 +510,14 @@ def main():
         yaml.dump_all(rules, f, default_flow_style=False)
 
     # Prepare the individual source queries on a per-logmap basis
+    # Instead of this - do it over each actual artifact map
     for key in rule_lists.keys():
         tmp_lookup_key = key.replace("|", "/")
         if tmp_lookup_key not in vql_maps:
-            logging.error(f"No Artifact Map for Defined logsource: {tmp_lookup_key}")
-            continue
+            logging.error(f"No Artifact Map for Defined logsource: {tmp_lookup_key} (ignore if using wildcards)")
         #vql_maps[tmp_lookup_key]["query"] += f"LET RulePath = \"{file_key_map[tmp_lookup_key]}\"\n"
         #vql_maps[tmp_lookup_key]["query"] += f"LET Rules = read_file(filename=RulePath, length=10000000)\n"
-        vql_maps[tmp_lookup_key]["query"] += 'SELECT * FROM sigma(rules=split(string=Rules, sep_string="---"),log_sources=LogSources,debug=False,field_mapping=FieldMapping)'
+        #vql_maps[tmp_lookup_key]["query"] += 'SELECT * FROM sigma(rules=split(string=Rules, sep_string="---"),log_sources=LogSources,debug=False,field_mapping=FieldMapping)'
 
     # Finalize the VQL 'sources' per logmap
     for k in vql_maps.keys():
@@ -525,9 +526,9 @@ def main():
             "query": vql_maps[k]["query"]
         }
         # tmp["query"] = LiteralScalarString(vql_maps[k]["query"])
-        # We only add sources that have 1 or more rules to not clutter the main VQL
-        if k.replace("/", "|") in rule_lists:
-            artifact_output.sources.append(tmp)
+        # REMOVED:We only add sources that have 1 or more rules to not clutter the main VQL
+        #if k.replace("/", "|") in rule_lists:
+        artifact_output.sources.append(tmp)
 
     # Generate the final output artifact
     logging.info(f"Generating Artifact Output...")
