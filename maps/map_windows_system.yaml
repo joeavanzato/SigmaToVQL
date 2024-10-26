@@ -58,7 +58,7 @@
     product: windows
     service: psreadline
   field_map:
-    ScriptBlockText: Line
+    ScriptBlockText: Test
 - artifact_name: Windows.System.Pslist
   artifact_subsource:
   sigma_logmap:
@@ -73,6 +73,10 @@
     Image: Exe
     NewProcessName: Name
     OriginalFileName: Name
+    ProcessId: Pid
+    UserName: Username
+    ProcessName: Name
+    ParentProcessId: Ppid
 - artifact_name: Windows.System.RootCAStore
   artifact_subsource:
   sigma_logmap:

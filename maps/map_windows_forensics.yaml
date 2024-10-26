@@ -30,6 +30,10 @@
     category: file_access
     product: windows
     service: lnk
+  field_map:
+    Target: LinkTarget.LinkTarget
+    TargetPath: StringData.TargetPath
+    Arguments: StringData.Arguments
 - artifact_name: Windows.Forensics.RecentApps
   artifact_subsource:
   sigma_logmap:

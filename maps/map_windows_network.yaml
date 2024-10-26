@@ -10,3 +10,5 @@
     SourcePort: SrcPort
     DestinationPort: DestPort
     DestinationIp: DestIP
+    Protocol: Type
+  select_addon: ",True AS Initiated"
