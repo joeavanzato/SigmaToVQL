@@ -2,9 +2,21 @@
  
 ### What is it?
 
-SigmaToVQL is a helper script designed to facilitate engaging the Velociraptor Sigma processing engine.  It provides a mechanism to quickly utilize Sigma logic over the results of any row-producing artifact, including in-line variables within the Sigma rules as well as supporting arbitrary parameter inputs to artifacts and the use of specific named sources within the artifact.
+SigmaToVQL is a utility designed to facilitate engaging with the Velociraptor Sigma processing engine.  It provides a mechanism to quickly utilize Sigma logic over the results of any row-producing artifact, including the use of in-line variables defined within the Sigma rules as well as supporting arbitrary parameter inputs to artifacts and the use of specific named sources within the artifact.
 
 Sigma has traditionally been used against Windows Event Logs and similar types of 'log' sources - with the power of Velociraptor, we can quickly stage VQL to leverage Sigma rules against any and all artifacts, not just the 'traditional' Sigma log sources.
+
+
+#### Usecase Ideas to Get You Excited
+
+* Write a correlation rule looking for mimikatz followed by a suspicious extension (dmp, zip, tmp, etc) in suspicious directories across file-based artifacts like the MFT or USN Journal.
+* Use existing network_connection rules to hunt inside of the enriched netstat artifact
+* Use DNS rules to inspect DNSCache or similar artifacts
+* Use process_creation rules to look across running processes, prefetch, etc
+* Develop custom rules inspecting Scheduled Tasks/Services for suspicious arguments, binary paths, etc
+* Use ps_script rules to target even more items such as ConsoleHost_history.txt files
+
+In general, the goal is to support as many existing Sigma rules as possible while allowing analysts to easily write their own rules specific to individual forensic artifacts.
 
 ### Example Usage
 
@@ -121,7 +133,7 @@ In the above examples, if we hadn't defined a specific variable for system\windo
 ```
 This is particularly useful for having common variables shared among and available to all rules.
 
-#### Passing Artifact Parameters
+#### Artifact Parameters
 
 Artifacts in Velociraptor support passing in parameters (arguments) when invoking them - we can do the same thing when preparing them for use as a Sigma logsource.  
 
@@ -157,16 +169,61 @@ specific:
 ```
 In the above case, both parameters specified under Windows.NTFS.MFT will be applied to the artifact while DateAfter will be applied to any other artifact where it is specified in the artifact map.  This is particularly useful to modify prior to an engagement and to quickly affect all relevant artifacts.
 
-### Artifact Maps
+#### Artifact Maps
 Maps primarily serve to tell the Sigma engine what category, product and service a specific artifact (and named source inside of that artifact) should align to when checking for relevant Sigma rules.
 
 In general, artifact maps are written to align to the standardized Sigma log sources whenever possible (https://sigmahq.io/docs/basics/log-sources.html).
 
-Since these are intended to operate based on Velociraptor Artifacts, maps should have a partial tie-in to that:
-* category: Using a logical portion of the Artifact name - for example, Windows.Forensics.Prefetch - category would be forensics
-* product: windows/linux/mac/etc
-* service: distinct identifier for the artifact AND named source if applicable
+* **category**: attempting to align as much as possible to default sigma categories - but sometimes not possible
+  * As an example - for Prefetch, we could use process_creation since there is a small amount of shared data there
+  * MFT we could use file_access as the most relevant one although file_creation and file_event are both possible - we can define separate maps for each as needed
+* **product**: windows/linux/mac/etc
+* **service**: distinct identifier for the artifact AND named source if applicable
   * Generic.Forensic.SQLiteHunter - Chromium Browser Extensions -> sqlitehunter\chromium\extensions
+
+Maps can also have a few other fields that are useful for both VQL and Sigma:
+* **field_map** - A dictionary representing field normalizations for VQL events - Key is the destination field name and Value is the current VQL Field Name (supports dot-notation for nested fields)
+```yaml
+field_map:
+  FileName: Name
+```
+Field Mappings are useful for normalizing columns, especially when using 'out of the box' Sigma rules for generic log sources like process_creation, etc.
+
+* **parameters** - If any keys are specified here, they will be replaced by 'global' parameters in arguments.yaml or at command-line
+  * If you wish to have a parameter forced onto a specific artifact, you can supply it as a local argument inside arguments.yaml like below
+```yaml
+global:
+  DateAfter: 2024-10-01T00:00:00Z
+  DateBefore: 2024-11-01T00:00.00Z
+local:
+  Windows.NTFS.MFT:
+    AllNtfs: True
+```
+Local Parameters are forcefully applied and replace any existing global parameter values - be sure that the parameter exists or else the VQL will fail to produce rows.
+
+* **artifact_subsource** - The named source within the artifact that this mapping should apply to if there are multiple sources
+
+* **select_addon** - Any additional logic we want to include following 'SELECT *' on the artifact 
+  * As an example, some rules such as those for network_connection rely on a column normalized as 'Initiated' to equal TRUE 
+  * If we want to run those same rules against the netstat_enriched artifact, it does not contain such a column - but we can typically assume that these connections are indeed initiated by the host
+  * Thus, we can add the column artifically to support the rules like below
+  * ```yaml
+    - artifact_name: Windows.Network.NetstatEnriched
+      artifact_subsource:
+      sigma_logmap:
+        product: windows
+        category: network_connection
+      field_map:
+        User: Username
+        Image: Path
+        CommandLine: CommandLine
+        SourcePort: SrcPort
+        DestinationPort: DestPort
+        DestinationIp: DestIP
+        Protocol: Type
+      select_addon: ",True AS Initiated"
+    ```
+    * This will then augment the relevant VQL to be 'SELECT *,True AS Initiated FROM...', adding the colum in question
 
 
 
