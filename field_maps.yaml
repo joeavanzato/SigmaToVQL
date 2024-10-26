@@ -1,0 +1,15 @@
+# List of default maps to use across all artifacts
+# If an artifact specifies a map that conflicts with this, the artifact-specific map is used
+# This map attempts to extract the most common
+SubjectUserName: Username
+TargetUserName: Username
+User: Username
+CommandLine: CommandLine
+Image: Exe
+NewProcessName: Name
+OriginalFileName: Name
+ProcessId: Pid
+UserName: Username
+ProcessName: Name
+ParentProcessId: Ppid
+ScriptBlockText: Line
