@@ -2,6 +2,8 @@ import argparse
 import logging
 import os
 import re
+from typing import Tuple
+
 import ruamel.yaml as yaml
 from dataclasses import dataclass
 
@@ -27,6 +29,7 @@ class ArtifactMap:
     sigmamap: str
     sourcename: str
     parameters: dict
+    select_addon: str
 
 
 @dataclass
@@ -42,15 +45,29 @@ class ArtifactVQL:
 
 def parse_arguments():
     """Parse/Validate input arguments via argparse - return the output as well as unknown arbitrary arguments as a list[str]"""
+    # TODO - Add bool to allow gzip of read rules directly into artifact, removing need for file
     parser = argparse.ArgumentParser()
-    parser.add_argument("-r", "--rules", type=str, default="rules", help="Directory containing input Sigma rules to translate into VQL")
-    parser.add_argument("-a", "--args", type=str, default="arguments.yaml", help="Path to YAML file containing parameter replacements for artifact maps")
-    parser.add_argument("-v", "--vars", type=str, default="variables.yaml", help="Path to YAML file containing variable replacements for sigma rules")
-    parser.add_argument("-m", "--maps", type=str, default="maps", help="Path to directory containing artifact maps")
-    parser.add_argument("-o", "--output", type=str, default="output", help="Directory where translated VQL and merged rules should be stored")
+    parser.add_argument("-r", "--rulesdir", type=str, default="rules",
+                        help="Directory containing input Sigma rules to translate into VQL")
+    parser.add_argument("-a", "--argsfile", default="arguments.yaml",
+                        help="Path to YAML file containing parameter replacements for artifact maps")
+    parser.add_argument("-v", "--varsfile", default="variables.yaml",
+                        help="Path to YAML file containing variable replacements for sigma rules")
+    parser.add_argument("-m", "--mapsdir", default="maps",
+                        help="Path to directory containing artifact maps")
+    parser.add_argument("-f", "--fieldmapfile", default="field_maps.yaml",
+                        help="Path to file containing global field maps")
+    parser.add_argument("-o", "--outputdir", default="output",
+                        help="Directory where translated VQL and merged rules should be stored")
+    # TODO
+    parser.add_argument("-i", "--inline", action='store_true',
+                        help="GZIPs rules and includes them directly in the VQL instead of a standalone file")
     args, unknown = parser.parse_known_args()
-    if not os.path.exists(args.rules) or not os.path.exists(args.maps):
-        raise Exception(f"Specified Directory Does Not Exist: {args.rules}")
+    #args = parser.parse_args()
+    if not os.path.exists(args.rulesdir):
+        raise Exception(f"Specified Directory Does Not Exist: {args.rulesdir}")
+    if not os.path.exists(args.mapsdir):
+        raise Exception(f"Specified Directory Does Not Exist: {args.mapsdir}")
 
     # allows for arbitrary input parameters to be fed into the artifact mapping as a replacement and ultimately
     # be used in the VQL params for specific artifacts
@@ -92,7 +109,7 @@ def get_validated_maps(data: list, params: dict) -> list:
             tmp = ArtifactMap(artifact=i["artifact_name"], source=i["artifact_subsource"],
                               category=i["sigma_logmap"]["category"], product=i["sigma_logmap"]["product"],
                               service=i["sigma_logmap"]["service"], fields=i["field_map"], sigmamap=f'{i["sigma_logmap"]["category"]}/{i["sigma_logmap"]["product"]}/{i["sigma_logmap"]["service"]}',
-                              sourcename=f"{i['artifact_name']} - {i['artifact_subsource']}", parameters={})
+                              sourcename=f"{i['artifact_name']} - {i['artifact_subsource']}", parameters={}, select_addon="")
 
             # # TODO - Fix this to support wild-card appropriately
             # tmpsource = f"{tmp.category} - {tmp.product} - {tmp.service}"
@@ -113,6 +130,8 @@ def get_validated_maps(data: list, params: dict) -> list:
                 if tmp.artifact in params:
                     for k, v in params[tmp.artifact].items():
                         tmp.parameters[k] = v
+            if "select_addon" in i:
+                tmp.select_addon = i["select_addon"]
             validated_maps.append(tmp)
     logging.info(f"Loaded {len(validated_maps)} Validated Artifact Maps")
     return validated_maps
@@ -123,6 +142,7 @@ def build_mapping_vql(valid_maps: list) -> dict:
     Receives all valid map objects and builds a dictionary storing name and query for each - helper VQL function
     The 'query' serves as the stub for later completion once sigma rules are loaded/merged
     :param valid_maps:
+    :param field_maps:
     :return:
     """
     #  In order to allow multiple artifacts to be defined on the same log-source, we will chain them together like below
@@ -158,7 +178,10 @@ def build_mapping_vql(valid_maps: list) -> dict:
                     if k in fields:
                         logging.error(f"Field Map Collision - Field '{k}' on Log Source {c}")
                     fields[k] = m.fields[k]
-            tmp["query"] += f"""query_{qidx}={{SELECT * FROM Artifact.{m.artifact}("""
+            select_addon = ""
+            if m.select_addon != "":
+                select_addon = m.select_addon
+            tmp["query"] += f"""query_{qidx}={{SELECT *{select_addon} FROM Artifact.{m.artifact}("""
             if m.source is not None:
                 tmp["query"] += f"source=\"{m.source}\""
             qidx += 1
@@ -184,19 +207,21 @@ def build_mapping_vql(valid_maps: list) -> dict:
         }
     )
         """
+
         tmp["query"] += """
-LET FieldMapping <= dict(\n"""
+LET LocalFieldMapping <= dict(\n"""
         field_count = len(fields)
         field_idx = 1
         for field in fields.keys():
-            tmp["query"] += f"  {field}=\"x=>x.{fields[field]}\""
+            tmp["query"] += f"  `{field}`=\"x=>x.{fields[field]}\""
             if field_idx != field_count:
                 tmp["query"] += ",\n"
             else:
                 tmp["query"] += "\n"
             field_idx += 1
         tmp["query"] += ")\n"
-        tmp["query"] += 'SELECT * FROM sigma(rules=split(string=Rules, sep_string="---"),log_sources=LogSources,debug=False,field_mapping=FieldMapping)'
+        tmp["query"] += "LET NewFieldMapping <= FieldMapping + LocalFieldMapping\n"
+        tmp["query"] += 'SELECT * FROM sigma(rules=split(string=Rules, sep_string="---"),log_sources=LogSources,debug=False,field_mapping=NewFieldMapping)'
         #print(tmp["query"])
         mappings[c] = tmp
 
@@ -391,13 +416,13 @@ def build_input_parameters(unknown_arguments: list, arguments_file: str) -> dict
     :return: dictionary of parameters for later use when building VQL/ArtifactMaps
     """
     parameters = {}
-    parser = argparse.ArgumentParser()
     for arg in unknown_arguments:
         if arg.startswith(("-", "--")):
-            parser.add_argument(arg.split('=')[0], type=str)
-    args = parser.parse_args()
-    for k in vars(args):
-        parameters[k] = vars(args)[k]
+            args = arg.split('=', 1)
+            if len(args) != 2:
+                logging.error(f"Invalid Argument Format - Missing '=' delimiter: {arg}")
+                continue
+            parameters[args[0]] = args[1]
 
     if os.path.exists(arguments_file):
         with open(arguments_file, "r") as f:
@@ -451,30 +476,77 @@ def get_artifact_maps(maps_directory: str) -> list:
     return maps
 
 
+def get_field_maps(field_map_file: str) -> dict:
+    """
+    Gets globally available field maps from the specified YAML file
+    :param field_map_file:
+    :return:
+    """
+    if not os.path.exists(field_map_file):
+        logging.error(f"Specified Field Map File does not exist: {field_map_file}")
+        return {}
+    with open(field_map_file) as f:
+        try:
+            data = yaml.safe_load(f)
+        except yaml.YAMLError as exc:
+            logging.error(f"Error Parsing YAML ({field_map_file}): {exc}")
+            return {}
+    return data
+
+
+def build_artifact_vql(args, field_maps:dict) -> tuple[ArtifactVQL, str]:
+    """
+    Builds the artifact stub depending on whether or not we are merging all rules into GZIP export or pointing to a file
+    :param args: Script input argparse NameSpace
+    :param field_maps: Global field-maps pulled from field_maps.yaml
+    :return: ArtifactVQL object containing the appropriate attributes
+    """
+    field_map_string = """
+LET FieldMapping <= dict(
+"""
+    idx = 1
+    field_count = len(field_maps)
+    for field in field_maps.keys():
+        field_map_string += f"  `{field}`=\"x=>x.{field_maps[field]}\""
+        if idx != field_count:
+            field_map_string += ",\n"
+        else:
+            field_map_string += """\n)"""
+        idx += 1
+
+    merged_rules_file = os.path.abspath(os.path.join(args.outputdir, "merged_rules.yaml"))
+    # Forward-Slash is a special char in VQL that helps reduce need to escape characters
+    tmp_merged_file = merged_rules_file.replace('\\', '/')
+    artifact_output = ArtifactVQL(
+        name="Custom.SigmaToVQL.Merged",
+        author="Autogenerated by github.com/joeavanzato/SigmaToVQL",
+        description="Defines Sigma Log Sources/Field Mappings and executes relevant rules.",
+        type="CLIENT",
+        export=f"""LET Rules = read_file(filename=\"{tmp_merged_file}\", length=10000000)
+    {field_map_string}
+    """,
+        sources=[])
+    return artifact_output, merged_rules_file
+
+
 def main():
     logging.info("Starting SigmaToVQL...")
     args, unknown_args = parse_arguments()
     yaml.add_representer(str, str_presenter)
     yaml.representer.SafeRepresenter.add_representer(str, str_presenter)
     logging.info(f"Reading Input Parameters...")
-    parameters = build_input_parameters(unknown_args, args.args)
+    parameters = build_input_parameters(unknown_args, args.argsfile)
+    logging.info(f"Reading Global Field Maps...")
+    field_maps = get_field_maps(args.fieldmapfile)
     logging.info(f"Reading Artifact Maps...")
-    artifact_maps = get_artifact_maps(args.maps)
+    artifact_maps = get_artifact_maps(args.mapsdir)
     if len(artifact_maps) == 0:
         logging.error("No Maps Loaded - Quitting")
         return
     else:
         logging.info(f"Loaded {len(artifact_maps)} Artifact Maps")
-
-    merged_rules_file = os.path.abspath(os.path.join(args.output, "merged_rules.yaml"))
-    tmp_merged_file = merged_rules_file.replace('\\', '/')
-    artifact_output = ArtifactVQL(name="Custom.SigmaToVQL.Merged",
-                                  author="Autogenerated by github.com/joeavanzato/SigmaToVQL",
-                                  description="Defines Sigma Log Sources/Field Mappings and executes relevant queries on a Velociraptor Client",
-                                  type="CLIENT",
-                                  export=f"LET Rules = read_file(filename=\"{tmp_merged_file}\", length=10000000)",
-                                  sources=[])
-
+    logging.info(f"Building Artifact VQL Stub...")
+    artifact_output, merged_rules_file = build_artifact_vql(args, field_maps)
     logging.info(f"Validating Artifact Maps...")
     valid_maps = get_validated_maps(artifact_maps, parameters)
     vql_maps = build_mapping_vql(valid_maps)
@@ -482,12 +554,12 @@ def main():
     sigma_files = get_input_files("rules")
     validated_rules = validate_rules(sigma_files)
     logging.info(f"Reading Input Variables...")
-    variables = read_variables(args.vars)
+    variables = read_variables(args.varsfile)
     rule_lists = build_rule_maps(validated_rules, variables)
 
-    if not os.path.exists(args.output):
-        os.mkdir(args.output)
-    merged_rules_dir = os.path.join(args.output, "merged_rules")
+    if not os.path.exists(args.outputdir):
+        os.mkdir(args.outputdir)
+    merged_rules_dir = os.path.join(args.outputdir, "merged_rules")
     if not os.path.exists(merged_rules_dir):
         os.mkdir(merged_rules_dir)
 
@@ -532,7 +604,7 @@ def main():
 
     # Generate the final output artifact
     logging.info(f"Generating Artifact Output...")
-    artifact_output_path = os.path.join(args.output, "Custom_SigmaToVQL_Merged.yaml")
+    artifact_output_path = os.path.join(args.outputdir, "Custom_SigmaToVQL_Merged.yaml")
     with open(artifact_output_path, "w") as f:
         # TODO - Add proper formatter to the class instead of doing it this way
         tmp = {"name": artifact_output.name,
