@@ -58,7 +58,7 @@
     product: windows
     service: psreadline
   field_map:
-    ScriptBlockText: Test
+    ScriptBlockText: Line
 - artifact_name: Windows.System.Pslist
   artifact_subsource:
   sigma_logmap:
