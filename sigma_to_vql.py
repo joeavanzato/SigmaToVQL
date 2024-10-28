@@ -62,7 +62,7 @@ def parse_arguments():
     parser.add_argument("-o", "--outputdir", default="output",
                         help="Directory where translated VQL and merged rules should be stored")
     parser.add_argument("-i", "--inline", action='store_true',
-                        help="GZIPs rules and includes them directly in the VQL instead of a standalone file")
+                        help="GZIPs and Base64 rules to include directly in the VQL instead of a standalone file")
     args, unknown = parser.parse_known_args()
     #args = parser.parse_args()
     if not os.path.exists(args.rulesdir):
@@ -577,28 +577,33 @@ def main():
         file_key_map[k] = os.path.abspath(file_path).replace("\\", "\\\\")
 
     # dump merged output
+    logging.info(f"Writing Merged Rule File: {merged_rules_file}")
     with open(merged_rules_file, "w") as f:
         yaml.dump_all(rules, f, default_flow_style=False)
 
     # Storing rules as a gzip string in export section
     if args.inline:
+        logging.info(f"Building GZIP/B64 Rules into VQL")
         rules_data = Path(merged_rules_file).read_text()
         b64_zipped_rules_string = base64.b64encode(gzip.compress(rules_data.encode()))
         artifact_output.export += f"""LET Rules = gunzip(string=base64decode(string=\"{b64_zipped_rules_string.decode("utf-8")}\"))"""
     else:
         # Need to make sure this file is transported to the client along with the artifact
+        logging.info(f"Building Rule File Reference into VQL")
         tmp_merged_file = merged_rules_file.replace('\\', '/')
         artifact_output.export += f"""LET Rules = read_file(filename=\"{tmp_merged_file}\", length=10000000)"""
 
-    # Prepare the individual source queries on a per-logmap basis
-    # Instead of this - do it over each actual artifact map
+    # This is currently just a validation check to make sure we have a logsource defined for each specified rule
     for key in rule_lists.keys():
         tmp_lookup_key = key.replace("|", "/")
-        if tmp_lookup_key not in vql_maps:
-            logging.error(f"No Artifact Map for Defined logsource: {tmp_lookup_key} (ignore if using wildcards)")
-        #vql_maps[tmp_lookup_key]["query"] += f"LET RulePath = \"{file_key_map[tmp_lookup_key]}\"\n"
-        #vql_maps[tmp_lookup_key]["query"] += f"LET Rules = read_file(filename=RulePath, length=10000000)\n"
-        #vql_maps[tmp_lookup_key]["query"] += 'SELECT * FROM sigma(rules=split(string=Rules, sep_string="---"),log_sources=LogSources,debug=False,field_mapping=FieldMapping)'
+        # Basically we want to iterate through vql_maps to see if there is one that 'matches' this using regex
+        match_pattern = tmp_lookup_key.replace("*", ".*")
+        match_found = False
+        for logsource in vql_maps:
+            if re.match(match_pattern, logsource):
+                match_found = True
+        if not match_found:
+            logging.error(f"No Artifact Map matches Rule-Defined logsource: {tmp_lookup_key}")
 
     # Finalize the VQL 'sources' per logmap
     for k in vql_maps.keys():
