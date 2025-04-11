@@ -1,11 +1,11 @@
 - artifact_name: Windows.NTFS.MFT
   artifact_subsource:
   sigma_logmap:
-    category: ntfs
+    category: file_event
     product: windows
     service: mft
   field_map:
-    FileName: FileName
+    TargetFilename: FileName
   parameters:
     DateAfter:
     DateBefore:

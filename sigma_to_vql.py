@@ -550,7 +550,7 @@ def main():
     valid_maps = get_validated_maps(artifact_maps, parameters)
     vql_maps = build_mapping_vql(valid_maps)
     logging.info(f"Reading Sigma Rules...")
-    sigma_files = get_input_files("rules")
+    sigma_files = get_input_files(args.rulesdir)
     validated_rules = validate_rules(sigma_files)
     logging.info(f"Reading Input Variables...")
     variables = read_variables(args.varsfile)

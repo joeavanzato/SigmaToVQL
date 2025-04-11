@@ -1,0 +1,35 @@
+title: Suspicious Terms in ConsoleHost_history
+description: Checks ConsoleHost_history.txt files for terms often associated with threat actor abuse.
+references:
+    - none
+tags:
+    - attack.execution
+author: joeavanzato@gmail.com
+date: 10/23/2024
+logsource:
+    category: ps_script
+    product: windows
+    service: psreadline
+detection:
+    selection:
+        Line|contains: [cd, reflection, downloadstring, sockets, rc4bytestream, disablerealtimemonitoring, invoke-iex, tobase64, frombase64, rundll32, bitstransfer, shellcode, suspendthread, memorystream, wmicommand, gpppassword, keystrokes, screenshot, vault, mimikatz]
+    condition: selection
+level: medium
+---
+title: Suspicious Terms in ConsoleHost_history (Variable)
+description: Checks ConsoleHost_history.txt files for terms often associated with threat actor abuse.
+references:
+    - none
+tags:
+    - attack.execution
+author: joeavanzato@gmail.com
+date: 10/23/2024
+logsource:
+    category: ps_script
+    product: windows
+    service: psreadline
+detection:
+    selection:
+        ScriptBlockText|contains: '%suspicious_terms%'
+    condition: selection
+level: medium

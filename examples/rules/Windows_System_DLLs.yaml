@@ -1,0 +1,17 @@
+title: DLL Loaded from suspicious location
+description: Checks loaded DLLs to look for anomalous locations
+references:
+    - none
+tags:
+    - attack.execution
+author: joeavanzato@gmail.com
+date: 10/29/2024
+logsource:
+    category: image_load
+    product: windows
+    service: dlls
+detection:
+    selection:
+        ImageLoaded|re: (windows\\tmp\\|appdata|downloads|public|guest).*\.dll
+    condition: selection
+level: medium

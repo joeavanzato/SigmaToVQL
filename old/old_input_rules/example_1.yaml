@@ -1,0 +1,28 @@
+title: Suspicious Terms in Prefetch
+id: generate one here https://www.uuidgenerator.net/version4
+description: A description of what your rule is meant to detect
+references:
+    - A list of all references that can help a reader or analyst understand the meaning of a triggered rule
+tags:
+    - attack.execution  # example MITRE ATT&CK category
+author: Test
+date: 10/18/2024
+logsource:
+    - artifact: Windows.Forensics.Prefetch
+      source: none
+variables:
+    suspicious_terms:
+        - "adobe"
+    starter:
+        - "ADOBE"
+detection:
+    selection:
+        PrefetchFileName|re|anyof: $suspicious_terms
+        OSPath|re: ["installer"]
+    selection2:
+        Executable|startswith: $starter
+    selection3:
+        Binary|startswith: \VOLUME
+    condition: (selection AND selection2) OR selection3
+    filter: ()
+level: low

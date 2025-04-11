@@ -7,6 +7,7 @@ global:
 local:
   Windows.NTFS.MFT:
     AllNtfs: True
+    PathRegex: test
   Windows.Forensics.Lnk:
     CheckHostnameMismatch: True
     SuspiciousOnly: True

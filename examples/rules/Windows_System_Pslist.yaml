@@ -1,0 +1,17 @@
+title: Running Process Originating from Suspicious Directory
+description: Checks running processes for suspicious binary locations
+references:
+    - none
+tags:
+    - attack.execution
+author: joeavanzato@gmail.com
+date: 10/29/2024
+logsource:
+    category: process_creation
+    product: windows
+    service: pslist
+detection:
+    selection:
+        OriginalFileName|re: (windows\\tmp\\|appdata|downloads|public|guest).*\.dll
+    condition: selection
+level: medium

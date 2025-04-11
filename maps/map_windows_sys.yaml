@@ -3,18 +3,20 @@
   sigma_logmap:
     category: driver_load
     product: windows
+    service: runningdrivers
   field_map:
     ImageLoaded: PathName
 - artifact_name: Windows.Sys.Programs
   artifact_subsource:
   sigma_logmap:
-    category: software
     product: windows
+    service: installedsoftware
   field_map:
 - artifact_name: Windows.Sys.StartupItems
   artifact_subsource:
   sigma_logmap:
-    category: startup
     product: windows
+    service: startupitems
   field_map:
+
 

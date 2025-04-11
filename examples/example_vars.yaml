@@ -1,0 +1,5 @@
+global:
+  psreadline_suspicious_terms: [mimikatz, shellcode]
+local:
+  system\windows\psreadline:
+    suspicious_terms: [mimikatz]

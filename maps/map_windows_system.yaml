@@ -41,7 +41,6 @@
     Resolution: Resolution
     Hostname: Hostname
     DestinationHostname: Hostname
-    Comment: Comment
 - artifact_name: Windows.System.Powershell.ModuleAnalysisCache
   artifact_subsource:
   sigma_logmap:
